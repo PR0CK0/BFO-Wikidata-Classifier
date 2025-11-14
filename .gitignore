@@ -62,3 +62,6 @@ Thumbs.db
 ontologies/*.owl
 ontologies/*.ttl
 !ontologies/.gitkeep
+
+# Claude
+.claude/
