@@ -1,0 +1,23 @@
+# Core dependencies
+rdflib>=7.0.0
+sentence-transformers>=2.3.0
+transformers>=4.36.0
+requests>=2.31.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+pyyaml>=6.0
+
+# PyTorch - IMPORTANT: Version 2.6+ required for CVE fixes (CUDA 12.6 support)
+# For GPU support (CUDA 12.6):
+torch>=2.6.0
+
+# For CPU-only (if you don't need GPU):
+# torch>=2.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+
+# Optional but recommended
+accelerate>=0.25.0  # For faster model loading
+datasets>=2.16.0    # For fine-tuning
+
+# Installation instructions:
+# GPU (CUDA 12.6): pip install torch>=2.6.0
+# CPU only: pip install torch>=2.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html

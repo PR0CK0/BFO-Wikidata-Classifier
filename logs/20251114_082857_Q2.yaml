@@ -1,0 +1,64 @@
+timestamp: '2025-11-14T08:28:57.963116'
+entity:
+  id: Q2
+  label: Earth
+  description: third planet from the Sun in the Solar System
+  text: 'Earth: third planet from the Sun in the Solar System'
+  aliases:
+  - Planet Earth
+  - World
+  - Mother Earth
+  - The Blue Planet
+classification:
+  strategy: cascade_hierarchical
+  processing_time_ms: 2381.904363632202
+  top_matches:
+  - class_uri: http://purl.obolibrary.org/obo/BFO_0000001
+    class_label: entity
+    confidence: 0.005663089454174042
+    source: hierarchical_cascade
+    metadata:
+      hierarchical_path:
+      - class_uri: http://purl.obolibrary.org/obo/BFO_0000001
+        class_label: entity
+        confidence: 0.005663089454174042
+        decision: START
+        depth: 0.0
+      - class_uri: http://purl.obolibrary.org/obo/BFO_0000001
+        class_label: entity
+        confidence: 0.005663089454174042
+        decision: LOW_CONFIDENCE
+        attempted_child: continuant
+        child_confidence: 0.3080815374851227
+      stop_reason: LOW_CONFIDENCE
+      depth: 2
+system_config:
+  device: cpu
+  models:
+    semantic: all-MiniLM-L6-v2
+    zeroshot: typeform/distilbert-base-uncased-mnli
+    finetuned_base: distilbert-base-uncased
+  thresholds: {}
+  classifier_config:
+    semantic:
+      enabled: true
+      top_k: 5
+      min_similarity: 0.3
+      use_hierarchy: true
+    zeroshot:
+      enabled: true
+      top_k: 5
+      hypothesis_template: '{entity_text} is {}.'
+      multi_label: false
+    rule_based:
+      enabled: true
+      min_confidence: 0.85
+additional_metadata:
+  preset: production
+  cli_overrides:
+    semantic_model: null
+    zeroshot_model: null
+    finetuned_model: null
+  sample_mode: false
+  random_mode: false
+  hierarchical_mode: true

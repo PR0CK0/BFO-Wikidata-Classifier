@@ -1,0 +1,178 @@
+# Model Registry Configuration
+# Defines available models for each classification approach
+
+semantic_models:
+  default: "all-MiniLM-L6-v2"
+  options:
+    - name: "all-MiniLM-L6-v2"
+      description: "Fast, lightweight sentence transformer"
+      size: "80MB"
+      speed: "fast"
+      quality: "good"
+      dims: 384
+      benchmark_sts: 68.06
+      sentences_per_sec: 14000
+
+    - name: "all-mpnet-base-v2"
+      description: "Highest quality sentence transformer"
+      size: "420MB"
+      speed: "medium"
+      quality: "best"
+      dims: 768
+      benchmark_sts: 69.57
+      sentences_per_sec: 2800
+
+    - name: "all-distilroberta-v1"
+      description: "Balanced speed and quality"
+      size: "290MB"
+      speed: "fast"
+      quality: "good"
+      dims: 768
+      benchmark_sts: 68.73
+      sentences_per_sec: 5000
+
+    - name: "paraphrase-multilingual-MiniLM-L12-v2"
+      description: "Multilingual support (50+ languages)"
+      size: "420MB"
+      speed: "medium"
+      quality: "good"
+      dims: 384
+      multilingual: true
+      languages: 50
+
+zero_shot_models:
+  default: "facebook/bart-large-mnli"
+  options:
+    - name: "facebook/bart-large-mnli"
+      description: "SOTA zero-shot classification, industry standard"
+      size: "1.6GB"
+      speed: "slow"
+      quality: "excellent"
+      mnli_accuracy: 89.4
+      avg_latency_ms: 200
+
+    - name: "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+      description: "Best performance, trained on 3 NLI datasets"
+      size: "440MB"
+      speed: "medium"
+      quality: "excellent"
+      mnli_accuracy: 90.7
+      avg_latency_ms: 150
+
+    - name: "typeform/distilbert-base-uncased-mnli"
+      description: "Fastest option, good for production"
+      size: "260MB"
+      speed: "fast"
+      quality: "good"
+      mnli_accuracy: 82.2
+      avg_latency_ms: 60
+
+base_models_for_finetuning:
+  default: "distilbert-base-uncased"
+  options:
+    - name: "Prajjwal1/bert-tiny"
+      description: "Ultra-lightweight BERT (2 layers, 128 hidden)"
+      size: "17MB"
+      speed: "very_fast"
+      params: "4.4M"
+      glue_score: ~60
+      use_case: "Extremely resource-constrained, proof-of-concept"
+
+    - name: "google/bert_uncased_L-2_H-128_A-2"
+      description: "Tiny BERT from Google (2 layers, 128 hidden)"
+      size: "17MB"
+      speed: "very_fast"
+      params: "4.4M"
+      glue_score: ~60
+      use_case: "Minimal footprint, fast experimentation"
+
+    - name: "prajjwal1/bert-mini"
+      description: "Mini BERT (4 layers, 256 hidden)"
+      size: "42MB"
+      speed: "very_fast"
+      params: "11M"
+      glue_score: ~65
+      use_case: "Low-resource devices, mobile deployment"
+
+    - name: "google/bert_uncased_L-4_H-256_A-4"
+      description: "Small BERT from Google (4 layers, 256 hidden)"
+      size: "42MB"
+      speed: "very_fast"
+      params: "11M"
+      glue_score: ~65
+      use_case: "Fast training on limited hardware"
+
+    - name: "distilbert-base-uncased"
+      description: "Fast training, 97% of BERT performance"
+      size: "260MB"
+      speed: "fast"
+      params: "66M"
+      glue_score: 79.9
+
+    - name: "bert-base-uncased"
+      description: "Most compatible, extensive ecosystem"
+      size: "440MB"
+      speed: "medium"
+      params: "110M"
+      glue_score: 82.1
+
+    - name: "microsoft/deberta-v3-small"
+      description: "Modern architecture, best small model"
+      size: "180MB"
+      speed: "fast"
+      params: "44M"
+      glue_score: 82.2
+
+    - name: "roberta-base"
+      description: "Robust pre-training, handles noisy input"
+      size: "500MB"
+      speed: "medium"
+      params: "125M"
+      glue_score: 83.5
+
+# Preset configurations for different use cases
+presets:
+  production:
+    name: "Production (Speed Priority)"
+    description: "Optimized for low latency in production"
+    semantic: "all-MiniLM-L6-v2"
+    zeroshot: "typeform/distilbert-base-uncased-mnli"
+    finetuned_base: "distilbert-base-uncased"
+    strategy: "cascade"
+    expected_latency_ms: "50-180"
+
+  research:
+    name: "Research (Quality Priority)"
+    description: "Highest accuracy, slower inference"
+    semantic: "all-mpnet-base-v2"
+    zeroshot: "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+    finetuned_base: "microsoft/deberta-v3-small"
+    strategy: "ensemble"
+    expected_latency_ms: "550"
+
+  resource_constrained:
+    name: "Resource-Constrained"
+    description: "Minimal memory and compute requirements"
+    semantic: "all-MiniLM-L6-v2"
+    zeroshot: null  # Skip zero-shot to save resources
+    finetuned_base: "distilbert-base-uncased"
+    strategy: "hybrid_confidence"
+    expected_latency_ms: "80"
+
+  multilingual:
+    name: "Multilingual"
+    description: "Support for 50+ languages"
+    semantic: "paraphrase-multilingual-MiniLM-L12-v2"
+    zeroshot: "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
+    finetuned_base: "bert-base-multilingual-uncased"
+    strategy: "cascade"
+    expected_latency_ms: "200"
+
+  ultra_lightweight:
+    name: "Ultra-Lightweight"
+    description: "Minimal models for extreme resource constraints"
+    semantic: "all-MiniLM-L6-v2"
+    zeroshot: null  # Skip zero-shot
+    finetuned_base: "Prajjwal1/bert-tiny"
+    strategy: "hybrid_confidence"
+    expected_latency_ms: "30"

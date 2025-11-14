@@ -1,0 +1,67 @@
+# Classification Configuration
+
+# Hybrid strategy settings
+strategies:
+  cascade:
+    description: "Try classifiers in order, exit early on high confidence"
+    order: ["rule_based", "semantic", "zeroshot"]
+    confidence_thresholds:
+      rule_based: 0.90  # Keywords need high confidence
+      semantic: 0.55    # Cosine similarity rarely exceeds 0.6-0.7 for even good matches
+      zeroshot: 0.70    # NLI produces higher confidence scores
+
+  ensemble:
+    description: "Combine all classifiers with weighted average"
+    weights:
+      rule_based: 0.15
+      semantic: 0.50
+      zeroshot: 0.35
+    normalize: true
+
+  hybrid_confidence:
+    description: "Boost confidence when multiple classifiers agree"
+    base_classifiers: ["rule_based", "semantic"]
+    agreement_boost: 0.15
+    min_agreement: 2
+
+  tiered:
+    description: "Adaptive strategy based on input characteristics"
+    rules:
+      - condition: "has_many_aliases"  # Well-known entities
+        strategy: "cascade"
+      - condition: "short_description"  # Limited context
+        strategy: "ensemble"
+      - condition: "default"
+        strategy: "semantic"
+
+# Classifier-specific settings
+classifiers:
+  rule_based:
+    enabled: true
+    min_confidence: 0.85
+
+  semantic:
+    enabled: true
+    top_k: 5
+    min_similarity: 0.30
+    use_hierarchy: true
+
+  zeroshot:
+    enabled: true
+    top_k: 5
+    hypothesis_template: "{entity_text} is {}."
+    multi_label: false  # BFO classes are mutually exclusive - use single-label mode for realistic probabilities
+
+  finetuned:
+    enabled: false  # Stub implementation
+    checkpoint: null
+
+# Hierarchical classification settings
+hierarchical:
+  min_confidence: 0.50  # Minimum confidence to continue down the hierarchy
+  confidence_drop_threshold: 0.15  # Max confidence drop allowed between parent and child
+
+# General settings
+top_k_results: 3
+infer_parent_classes: true
+min_confidence_threshold: 0.30
