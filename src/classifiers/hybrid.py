@@ -413,6 +413,11 @@ class HybridClassifier:
                     'threshold': threshold,
                     'decision': 'ACCEPT' if top_confidence >= threshold else 'CONTINUE'
                 }
+
+                # Add hypothesis for zero-shot classifier
+                if classifier_name == 'zeroshot' and matches[0].metadata.get('hypothesis'):
+                    decision['hypothesis'] = matches[0].metadata['hypothesis']
+
                 cascade_log.append(decision)
 
                 if top_confidence >= threshold:

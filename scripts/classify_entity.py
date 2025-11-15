@@ -293,6 +293,8 @@ def main():
                     print(f"  Prediction: {step['top_prediction']}")
                     print(f"  Confidence: {step['confidence']:.3f}")
                     print(f"  Threshold:  {step['threshold']:.3f}")
+                    if 'hypothesis' in step:
+                        print(f"  Hypothesis: {step['hypothesis']}")
                     print(f"  Decision:   {decision_symbol}")
                 else:
                     print(f"  Decision:   {decision_symbol}")

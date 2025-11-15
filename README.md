@@ -31,6 +31,86 @@ python scripts/classify_entity.py --random
 
 ---
 
+## How Cascade Classification Works
+
+The cascade strategy tries classifiers in order, stopping when a result meets its confidence threshold:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    ENTITY TO CLASSIFY                        │
+│              "Earth: third planet from the Sun"              │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ▼
+          ┌────────────────────────┐
+          │   1. RULE-BASED        │  Threshold: 0.90
+          │   (Wikidata P31 rules) │
+          └────────┬───────────────┘
+                   │
+            ┌──────┴──────┐
+            │   Match?    │
+            └──────┬──────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+       YES                   NO
+        │                     │
+   conf ≥ 0.90?               │
+        │                     ▼
+        │        ┌────────────────────────┐
+        │        │   2. SEMANTIC          │  Threshold: 0.55
+        │        │   (Cosine similarity)  │
+        │        └────────┬───────────────┘
+        │                 │
+        │          ┌──────┴──────┐
+        │          │   Match?    │
+        │          └──────┬──────┘
+        │                 │
+        │      ┌──────────┴──────────┐
+        │      │                     │
+        │     YES                   NO
+        │      │                     │
+        │ conf ≥ 0.55?               │
+        │      │                     ▼
+        │      │        ┌────────────────────────┐
+        │      │        │   3. ZERO-SHOT NLI     │  Threshold: 0.70
+        │      │        │   (Natural Language    │
+        │      │        │    Inference)          │
+        │      │        └────────┬───────────────┘
+        │      │                 │
+        │      │          ┌──────┴──────┐
+        │      │          │   Match?    │
+        │      │          └──────┬──────┘
+        │      │                 │
+        │      │      ┌──────────┴──────────┐
+        │      │      │                     │
+        │      │     YES                   NO
+        │      │      │                     │
+        │      │ conf ≥ 0.70?               │
+        │      │      │                     ▼
+        │      │      │        ┌────────────────────────┐
+        │      │      │        │   4. FINE-TUNED        │  (stub only)
+        │      │      │        │   (Not implemented)    │
+        │      │      │        └────────┬───────────────┘
+        │      │      │                 │
+        │      │      │                 │
+        │      │      │                 │
+        ▼      ▼      ▼                 ▼
+    ┌──────────────────────────────────────┐
+    │        RETURN CLASSIFICATION         │
+    │   (First classifier to meet threshold│
+    │    or best match if none meet it)    │
+    └──────────────────────────────────────┘
+```
+
+**Key Points:**
+- Each classifier has its own confidence threshold
+- Cascade exits early when a threshold is met (faster)
+- If no threshold is met, returns best match from last classifier
+- See [Configuration](#configuration) to adjust thresholds
+
+---
+
 ## Why is BFO Classification Hard?
 
 **BFO (Basic Formal Ontology) is an upper-level ontology with extremely abstract, philosophical classes:**
@@ -117,6 +197,8 @@ Hierarchical mode successfully navigates the BFO tree from Entity → Occurrent 
 - [Installation](#installation)
 - [Usage](#usage)
 - [Classification Modes](#classification-modes)
+- [Hybrid Strategies](#hybrid-strategies)
+- [Configuration](#configuration)
 - [Semantic Embedding Strategy](#semantic-embedding-strategy)
 - [BFO Ontology Structure](#bfo-ontology-structure)
 - [Known Issues](#known-issues)
@@ -276,16 +358,17 @@ print(f"Time: {result.processing_time_ms:.1f}ms")
 
 ### Flat Classification (Default)
 
-Classifies across all 36 BFO classes simultaneously.
+Classifies across all 36 BFO classes simultaneously using one of four strategies (see below).
 
 **Pros:**
 - Fast - single classification pass
 - Simple - no traversal logic
+- Four strategy options (cascade, ensemble, hybrid-confidence, tiered)
 
 **Cons:**
-- **Almost always returns "Entity"** - The most abstract class matches everything with decent similarity
+- **Almost always returns "Entity"** when using semantic similarity alone - The most abstract class matches everything with decent similarity
 - Doesn't leverage ontology hierarchy
-- Low confidence scores (0.15-0.30 typical)
+- Low confidence scores (0.15-0.30 typical for semantic)
 
 ### Hierarchical Classification
 
@@ -322,6 +405,255 @@ hierarchical:
   confidence_drop_threshold: 0.15  # Max drop allowed (depth 1+)
   # Note: Depth 0 (Entity→children) uses adaptive threshold of 0.50
   # to handle the large initial drop from root
+```
+
+---
+
+## Hybrid Strategies
+
+The system supports **four hybrid strategies** that combine multiple classifiers in different ways. Each strategy has different trade-offs for speed, accuracy, and behavior.
+
+**Note:** Currently, **cascade is the primary tested strategy**. The other strategies are implemented but have seen less production use. See [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details.
+
+### 1. Cascade (Default)
+
+**How it works:** Tries classifiers in order (rule-based → semantic → zero-shot), exits early when a result meets its confidence threshold.
+
+```yaml
+# configs/classification.yaml
+strategies:
+  cascade:
+    order: ["rule_based", "semantic", "zeroshot"]
+    confidence_thresholds:
+      rule_based: 0.90
+      semantic: 0.55
+      zeroshot: 0.70
+```
+
+**Behavior:**
+1. Try rule-based classifier
+   - If confidence ≥ 0.90 → ACCEPT and exit
+   - Otherwise → continue
+2. Try semantic classifier
+   - If confidence ≥ 0.55 → ACCEPT and exit
+   - Otherwise → continue
+3. Try zero-shot classifier
+   - Return result (no more classifiers to try)
+
+**Pros:**
+- Fast - often exits after semantic classifier (~45ms)
+- Good balance of speed and accuracy
+- Transparent decision trace
+
+**Cons:**
+- May miss better results from slower classifiers
+- Threshold tuning affects behavior significantly
+
+**Use when:** You want fast results with reasonable accuracy
+
+### 2. Ensemble
+
+**How it works:** Runs ALL classifiers, combines results using weighted average.
+
+```yaml
+# configs/classification.yaml
+strategies:
+  ensemble:
+    weights:
+      rule_based: 0.15
+      semantic: 0.50
+      zeroshot: 0.35
+    normalize: true
+```
+
+**Behavior:**
+1. Run rule-based, semantic, and zero-shot in parallel
+2. For each BFO class, calculate weighted score:
+   ```
+   score(class) = 0.15 × rule_conf + 0.50 × sem_conf + 0.35 × zero_conf
+   ```
+3. Return top-k classes by aggregated score
+
+**Pros:**
+- Most accurate - leverages all classifiers
+- No early exit means you don't miss good predictions
+- Weights can be tuned per domain
+
+**Cons:**
+- Slowest - must run all classifiers (~250ms)
+- Weights require tuning for optimal performance
+
+**Use when:** Accuracy is more important than speed
+
+### 3. Hybrid-Confidence
+
+**How it works:** Uses base classifiers (rule-based + semantic), boosts confidence when multiple classifiers agree on the same class.
+
+```yaml
+# configs/classification.yaml
+strategies:
+  hybrid_confidence:
+    base_classifiers: ["rule_based", "semantic"]
+    agreement_boost: 0.15
+    min_agreement: 2
+```
+
+**Behavior:**
+1. Run rule-based and semantic classifiers
+2. For each class, take max confidence from any classifier
+3. If 2+ classifiers predict the same class:
+   ```
+   boosted_confidence = min(max_confidence + 0.15, 1.0)
+   ```
+4. Return top-k by boosted scores
+
+**Pros:**
+- Fast - only uses rule-based + semantic
+- Rewards classifier agreement (likely more reliable)
+- Simple boosting mechanism
+
+**Cons:**
+- Doesn't use zero-shot (may miss abstract reasoning)
+- Agreement boost is fixed (not adaptive)
+
+**Use when:** You want fast classification with confidence boosting for agreed predictions
+
+### 4. Tiered (Adaptive)
+
+**How it works:** Automatically selects a strategy based on entity characteristics.
+
+```yaml
+# configs/classification.yaml
+strategies:
+  tiered:
+    rules:
+      - condition: "has_many_aliases"    # ≥3 aliases
+        strategy: "cascade"
+      - condition: "short_description"   # <50 chars
+        strategy: "ensemble"
+      - condition: "default"
+        strategy: "semantic"
+```
+
+**Behavior:**
+1. Check entity characteristics:
+   - **Many aliases (≥3)**: Well-known entity → use **cascade** (fast)
+   - **Short description (<50 chars)**: Limited context → use **ensemble** (accurate)
+   - **Default**: Use **semantic only** (balanced)
+
+2. Execute selected strategy
+
+**Pros:**
+- Adaptive - optimizes per entity
+- Can balance speed/accuracy automatically
+- Good for mixed workloads
+
+**Cons:**
+- Complex - harder to debug
+- Heuristics may not fit all domains
+- Unpredictable behavior
+
+**Use when:** You have varied entity types and want automatic strategy selection
+
+### Strategy Comparison
+
+| Strategy | Classifiers Used | Speed | Accuracy | Use Case |
+|----------|-----------------|-------|----------|----------|
+| **Cascade** | 1-3 (early exit) | Fast (~50ms) | Good | General purpose, tested |
+| **Ensemble** | All 3 | Slow (~250ms) | Best | Accuracy-critical tasks |
+| **Hybrid-Confidence** | 2 (rule + semantic) | Fast (~50ms) | Good | Agreement-based confidence |
+| **Tiered** | Varies by entity | Varies | Varies | Mixed entity types |
+
+**Recommendation:** Start with **cascade** (default). It's well-tested and provides good speed/accuracy trade-off. See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed implementation of each strategy.
+
+---
+
+## Configuration
+
+### Confidence Thresholds
+
+The system uses confidence thresholds to control when classifiers accept their predictions. These are configured in [configs/classification.yaml](configs/classification.yaml).
+
+#### Cascade Strategy Thresholds
+
+When using cascade mode (`--strategy cascade`), each classifier has a threshold that determines whether to accept its result and exit early:
+
+```yaml
+# configs/classification.yaml
+strategies:
+  cascade:
+    confidence_thresholds:
+      rule_based: 0.90  # Very high threshold - only accept strong rule matches
+      semantic: 0.55    # Lower threshold - cosine similarity rarely exceeds 0.6-0.7
+      zeroshot: 0.70    # Moderate threshold - NLI produces higher scores
+```
+
+**How to adjust:**
+- **Increase threshold** (e.g., 0.55 → 0.70): More conservative, requires stronger match to exit cascade
+- **Decrease threshold** (e.g., 0.55 → 0.40): More aggressive, exits earlier with weaker matches
+
+**Impact:**
+- Higher thresholds → cascade runs longer → slower but potentially better quality
+- Lower thresholds → cascade exits earlier → faster but may miss better matches from later classifiers
+
+#### Hierarchical Classification Thresholds
+
+When using hierarchical mode (`--hierarchical`), thresholds control when to stop traversing the ontology tree:
+
+```yaml
+# configs/classification.yaml
+hierarchical:
+  min_confidence: 0.50           # Minimum confidence to continue down hierarchy
+  confidence_drop_threshold: 0.15  # Max drop allowed between parent and child
+```
+
+**Parameters:**
+- `min_confidence`: Absolute minimum confidence to continue deeper (default: 0.50)
+- `confidence_drop_threshold`: Maximum allowed confidence drop from parent to child (default: 0.15)
+
+**Example:** If parent has confidence 0.65 and best child has 0.48:
+- Confidence drop = 0.65 - 0.48 = 0.17
+- Drop exceeds threshold (0.17 > 0.15) → STOP at parent
+
+**How to adjust:**
+- **Increase `min_confidence`** (e.g., 0.50 → 0.65): Stops traversal earlier, produces less specific classifications
+- **Decrease `min_confidence`** (e.g., 0.50 → 0.35): Continues deeper into tree, produces more specific classifications
+- **Increase `confidence_drop_threshold`** (e.g., 0.15 → 0.25): Tolerates larger drops, goes deeper into tree
+- **Decrease `confidence_drop_threshold`** (e.g., 0.15 → 0.10): More conservative, stops when confidence drops quickly
+
+#### Individual Classifier Settings
+
+```yaml
+# configs/classification.yaml
+classifiers:
+  rule_based:
+    min_confidence: 0.85  # Rule-based must be very confident
+
+  semantic:
+    min_similarity: 0.30  # Minimum cosine similarity to return result
+
+  zeroshot:
+    # No min_confidence here - uses cascade threshold instead
+```
+
+**Note:** These are different from cascade thresholds:
+- Cascade thresholds: Control early exit decision
+- Classifier min_confidence: Filter results before returning them
+
+#### Editing Configuration
+
+To change thresholds:
+
+1. Open [configs/classification.yaml](configs/classification.yaml)
+2. Edit the relevant threshold value
+3. Save the file
+4. Re-run classification (changes take effect immediately)
+
+**Example:**
+```bash
+# Edit configs/classification.yaml to set semantic threshold to 0.60
+# Then test:
+python scripts/classify_entity.py Q2 --strategy cascade
 ```
 
 ---
@@ -483,28 +815,7 @@ self.wikidata_rules = {
 - Implement training loop
 - Fine-tune BERT/DeBERTa
 
-### 6. Hierarchical Classification Confidence Normalization (FIXED)
-
-**Issue:** Hierarchical classification was producing negative confidence scores and stopping too early.
-
-**Root Cause:** Raw cosine similarity scores (range [-1, 1]) were being used directly as confidence values.
-
-**Fix Applied:** Normalized similarity scores to [0, 1] range: `confidence = (similarity + 1.0) / 2.0`
-
-**Example Results:**
-```
-Earth (Q2) Classification:
-Level 1: entity (1.000) → START
-Level 2: occurrent (0.524) → CONTINUE
-Level 3: spatiotemporal region (0.610) → CONTINUE
-Level 4: spatiotemporal region (0.610) → LEAF_NODE
-
-Result: spatiotemporal region (confidence: 0.610)
-```
-
-**Status:** ✅ Fixed. Hierarchical classification now traverses 4-7 levels deep with proper confidence scores.
-
-### 7. Hierarchical Classification Can Be Slow
+### 6. Hierarchical Classification Can Be Slow
 
 **Issue:** Hierarchical mode requires multiple classification passes (one per level, up to 6-7 levels).
 
@@ -515,7 +826,7 @@ Result: spatiotemporal region (confidence: 0.610)
 - Use `ultra_lightweight` preset for hierarchical
 - Adjust early stopping thresholds
 
-### 8. No Confidence Calibration
+### 7. No Confidence Calibration
 
 **Issue:** Confidence scores are raw cosine similarity (0.3-0.7 range) or NLI scores, not calibrated probabilities.
 
