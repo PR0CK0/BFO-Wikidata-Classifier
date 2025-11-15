@@ -857,6 +857,60 @@ self.wikidata_rules = {
 1. **Expand Wikidata Claim Rules** - Map P31 values to specific BFO classes (not just Q5→MaterialEntity)
 2. **Confidence Calibration** - Temperature scaling to get meaningful 0-1 probabilities
 
+### Cascade Strategy Improvements
+
+#### 1. Context-Aware Zero-Shot Classification
+
+**Problem:** Currently, zero-shot runs independently without knowledge of what semantic similarity predicted.
+
+**Proposed Solution:** Pass semantic similarity results as context to zero-shot classifier.
+
+**Implementation:**
+```python
+# Current approach:
+zeroshot_result = zeroshot.classify(entity, top_k=3)
+
+# Proposed approach:
+semantic_top3 = semantic.classify(entity, top_k=3)
+context = f"Semantic similarity suggests: {semantic_top3[0].class_label} (conf: {semantic_top3[0].confidence:.2f}), " \
+          f"{semantic_top3[1].class_label} (conf: {semantic_top3[1].confidence:.2f}), " \
+          f"{semantic_top3[2].class_label} (conf: {semantic_top3[2].confidence:.2f})"
+
+# Modify entity text or hypothesis template to include context
+enhanced_entity_text = f"{entity.get_text()}. Context: {context}"
+zeroshot_result = zeroshot.classify(enhanced_entity_with_context, top_k=3)
+```
+
+**Expected Benefits:**
+- Zero-shot can refine/validate semantic similarity predictions
+- Provides "second opinion" with awareness of first opinion
+- May help resolve edge cases where semantic similarity is uncertain
+- Could boost confidence when both methods agree
+
+**Challenges:**
+- Longer input text → slower inference
+- May bias zero-shot toward semantic predictions
+- Needs careful prompt engineering to avoid overwhelming NLI model
+
+#### 2. Adaptive Threshold Tuning
+
+**Idea:** Adjust cascade thresholds based on entity characteristics or previous results.
+
+**Example:**
+- If entity has rich description (>100 chars) → lower semantic threshold (0.50 instead of 0.55)
+- If entity has sparse description (<30 chars) → higher semantic threshold (0.65) to force zero-shot
+
+#### 3. Confidence Propagation in Cascade
+
+**Idea:** Track confidence degradation across cascade stages, boost final confidence if multiple stages agree.
+
+**Example:**
+```
+Semantic: MaterialEntity (0.52) - below threshold 0.55, continue
+Zero-shot: MaterialEntity (0.68) - ACCEPT
+Final: MaterialEntity (0.68 + 0.10 agreement bonus = 0.78)
+```
+
 ### Research Directions
 
 - **Alternative Embeddings** - Try domain-adapted embeddings for philosophical/ontology text
@@ -864,6 +918,8 @@ self.wikidata_rules = {
 - **Hybrid Reasoning** - Combine semantic similarity with logical inference rules
 - **Multi-Label Classification** - Allow entities to belong to multiple BFO classes
 - **Explanation Generation** - Explain why a particular class was chosen
+- **Ensemble Weighting Optimization** - Learn optimal ensemble weights from labeled data
+- **Cross-Classifier Calibration** - Normalize confidence scores across classifiers to same scale
 
 ---
 
